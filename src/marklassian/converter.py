@@ -166,16 +166,7 @@ def _inline_to_adf(tokens: list[dict[str, Any]] | None) -> list[AdfNode]:
                         "marks": _get_marks(child, {"strike": {"type": "strike"}}),
                     })
 
-        elif token_type == "link":
-            text = _get_safe_text(token)
-            if text:
-                result.append({
-                    "type": "text",
-                    "text": text,
-                    "marks": _get_marks(token),
-                })
-
-        elif token_type == "codespan":
+        elif token_type in ("link", "codespan"):
             text = _get_safe_text(token)
             if text:
                 result.append({
@@ -434,9 +425,7 @@ def _tokens_to_adf(tokens: list[dict[str, Any]] | None) -> list[AdfNode]:
 
         elif token_type == "block_code":
             lang = token.get("attrs", {}).get("info", "") or "text"
-            raw_text = token.get("raw", "")
-            if raw_text.endswith("\n"):
-                raw_text = raw_text[:-1]
+            raw_text = token.get("raw", "").removesuffix("\n")
             result.append({
                 "type": "codeBlock",
                 "attrs": {"language": lang},

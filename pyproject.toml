@@ -18,7 +18,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Text Processing :: Markup :: Markdown",
 ]
-dependencies = ["mistune>=3.0.0"]
+dependencies = ["mistune>=3.3.4,<3.4"]
 
 [project.urls]
 Homepage = "https://github.com/mbroton/marklassian-py"
@@ -35,4 +35,10 @@ packages = ["src/marklassian"]
 testpaths = ["tests"]
 
 [dependency-groups]
-dev = ["pytest>=8.0.0"]
+dev = [
+    "jsonschema>=4.25.1",
+    "mypy>=1.18.2",
+    "pip-audit>=2.9.0",
+    "pytest>=9.0.3",
+    "ruff>=0.13.2",
+]

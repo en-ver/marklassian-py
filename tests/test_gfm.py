@@ -1,8 +1,9 @@
 from typing import Any, cast
 
-from marklassian import markdown_to_adf
-
 from conftest import normalize_adf_for_testing
+from jsonschema.protocols import Validator
+
+from marklassian import markdown_to_adf
 
 
 def test_gfm_task_lists(task_list_adf: dict[str, Any]) -> None:
@@ -27,12 +28,13 @@ def test_nested_gfm_task_lists_with_checked_and_unchecked(
     assert normalized_adf == nested_task_list_adf
 
 
-def test_task_lists_with_formatting() -> None:
+def test_task_lists_with_formatting(adf_validator: Validator) -> None:
     markdown = """- [x] **Bold** task
 - [ ] *Italic* task with [link](https://example.com)
 - [ ] `Code` task"""
 
     result = cast(dict[str, Any], markdown_to_adf(markdown))
+    adf_validator.validate(result)
     normalized_adf = normalize_adf_for_testing(result)
 
     assert normalized_adf["content"][0]["type"] == "taskList"
@@ -65,12 +67,13 @@ def test_task_lists_with_formatting() -> None:
     assert has_code
 
 
-def test_mixed_regular_and_task_list_items() -> None:
+def test_mixed_regular_and_task_list_items(adf_validator: Validator) -> None:
     markdown = """- Regular item
 - [ ] Task item
 - Another regular item"""
 
     result = cast(dict[str, Any], markdown_to_adf(markdown))
+    adf_validator.validate(result)
 
     first_content = result["content"][0]
     assert first_content["type"] == "bulletList"

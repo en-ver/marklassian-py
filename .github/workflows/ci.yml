@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.26"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-groups --frozen --python "${{ matrix.python-version }}"
+
+      - name: Run tests
+        continue-on-error: ${{ matrix.python-version == '3.10' }} # Remove after #1 is fixed.
+        run: uv run --frozen --python "${{ matrix.python-version }}" pytest
+
+  quality:
+    name: Quality and package checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.14"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.26"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-groups --frozen --python "3.14"
+
+      - name: Check lint
+        run: uv run --frozen ruff check .
+
+      - name: Check types
+        run: uv run --frozen mypy src
+
+      - name: Audit dependencies
+        run: uv run --frozen pip-audit
+
+      - name: Build distributions
+        run: uv build
+
+      - name: Check wheel type information
+        run: |
+          uv venv /tmp/marklassian-wheel-check --python "3.14"
+          uv pip install --python /tmp/marklassian-wheel-check/bin/python dist/*.whl
+          uv run --no-sync --python "3.14" mypy --strict \
+            --python-executable /tmp/marklassian-wheel-check/bin/python \
+            tests/typing/installed_package.py

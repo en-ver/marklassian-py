@@ -6,6 +6,9 @@ dist/
 wheels/
 *.egg-info
 
+# Local planning files
+/TODO.md
+
 # Virtual environments
 .venv
 *.log

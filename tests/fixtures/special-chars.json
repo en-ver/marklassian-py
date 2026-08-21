@@ -136,20 +136,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Literal asterisks: *not bold*, *"
-        },
-        {
-          "type": "text",
-          "text": "not bold*",
-          "marks": [
-            {
-              "type": "em"
-            }
-          ]
-        },
-        {
-          "type": "text",
-          "text": " Literal underscores: _not italic_, __not bold__ Literal backticks: `not code` Literal hash: # not heading"
+          "text": "Literal asterisks: *not bold*, **not bold** Literal underscores: _not italic_, __not bold__ Literal backticks: `not code` Literal hash: # not heading"
         }
       ]
     },
