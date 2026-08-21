@@ -4,10 +4,13 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from jsonschema.protocols import Validator
+from jsonschema.validators import validator_for
 
 from marklassian.types import AdfDocument
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
+ADF_SCHEMA_PATH = Path(__file__).parent / "schemas" / "adf-schema.json"
 
 
 def normalize_adf_for_testing(adf: AdfDocument | dict[str, Any]) -> dict[str, Any]:
@@ -40,6 +43,16 @@ def load_fixture(name: str) -> dict[str, Any]:
     fixture_path = FIXTURES_DIR / f"{name}.json"
     with open(fixture_path) as f:
         return json.load(f)
+
+
+@pytest.fixture(scope="session")
+def adf_validator() -> Validator:
+    with open(ADF_SCHEMA_PATH) as f:
+        schema = json.load(f)
+
+    validator_class = validator_for(schema)
+    validator_class.check_schema(schema)
+    return validator_class(schema)
 
 
 @pytest.fixture

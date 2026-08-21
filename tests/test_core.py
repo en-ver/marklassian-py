@@ -124,8 +124,8 @@ Dashes: em—dash, en–dash, hyphen-dash
 Ellipsis: Wait... for it…
 
 ## Escaped Markdown Characters
-Literal asterisks: \*not bold\*, \**not bold\**
-Literal underscores: \_not italic\_, \__not bold\__
+Literal asterisks: \*not bold\*, \*\*not bold\*\*
+Literal underscores: \_not italic\_, \_\_not bold\_\_
 Literal backticks: \`not code\`
 Literal hash: \# not heading
 
