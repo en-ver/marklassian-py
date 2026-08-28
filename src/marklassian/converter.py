@@ -1,3 +1,4 @@
+import copy
 import re
 import uuid
 from typing import Any
@@ -30,37 +31,17 @@ def _get_safe_text(token: dict[str, Any]) -> str:
     return ""
 
 
-def _get_marks(token: dict[str, Any], marks: dict[str, AdfMark] | None = None) -> list[AdfMark]:
-    if marks is None:
-        marks = {}
+def _add_mark(marks: list[AdfMark], mark: AdfMark) -> list[AdfMark]:
+    if any(existing["type"] == mark["type"] for existing in marks):
+        return marks
+    return [*marks, mark]
 
-    token_type = token.get("type", "")
 
-    if token_type == "emphasis" and "em" not in marks:
-        marks["em"] = {"type": "em"}
-
-    if token_type == "strong" and "strong" not in marks:
-        marks["strong"] = {"type": "strong"}
-
-    if token_type == "strikethrough" and "strike" not in marks:
-        marks["strike"] = {"type": "strike"}
-
-    if token_type == "link":
-        marks["link"] = {"type": "link", "attrs": {"href": token.get("attrs", {}).get("url", "")}}
-
-    if token_type == "codespan" and "code" not in marks:
-        marks["code"] = {"type": "code"}
-
-    children = token.get("children", [])
-    if children and len(children) == 1:
-        return _get_marks(children[0], marks)
-
-    resolved_marks = list(marks.values())
-
-    if "code" in marks:
-        return [m for m in resolved_marks if m["type"] in ("link", "code")]
-
-    return resolved_marks
+def _create_text_node(text: str, marks: list[AdfMark]) -> AdfNode:
+    node: AdfNode = {"type": "text", "text": text}
+    if marks:
+        node["marks"] = copy.deepcopy(marks)
+    return node
 
 
 def _create_media_node(token: dict[str, Any]) -> AdfNode:
@@ -115,9 +96,15 @@ def _merge_adjacent_text_nodes(nodes: list[AdfNode]) -> list[AdfNode]:
     return result
 
 
-def _inline_to_adf(tokens: list[dict[str, Any]] | None) -> list[AdfNode]:
+def _inline_to_adf(
+    tokens: list[dict[str, Any]] | None,
+    marks: list[AdfMark] | None = None,
+) -> list[AdfNode]:
     if not tokens:
         return []
+
+    if marks is None:
+        marks = []
 
     result: list[AdfNode] = []
 
@@ -127,62 +114,68 @@ def _inline_to_adf(tokens: list[dict[str, Any]] | None) -> list[AdfNode]:
         if token_type == "text":
             children = token.get("children")
             if children:
-                result.extend(_inline_to_adf(children))
+                result.extend(_inline_to_adf(children, marks))
             else:
                 text = _get_safe_text(token)
                 if text:
-                    result.append({"type": "text", "text": text})
+                    result.append(_create_text_node(text, marks))
 
         elif token_type == "emphasis":
-            children = token.get("children", [])
-            for child in children:
-                text = _get_safe_text(child)
-                if text:
-                    result.append({
-                        "type": "text",
-                        "text": text,
-                        "marks": _get_marks(child, {"em": {"type": "em"}}),
-                    })
+            result.extend(
+                _inline_to_adf(
+                    token.get("children", []),
+                    _add_mark(marks, {"type": "em"}),
+                )
+            )
 
         elif token_type == "strong":
-            children = token.get("children", [])
-            for child in children:
-                text = _get_safe_text(child)
-                if text:
-                    result.append({
-                        "type": "text",
-                        "text": text,
-                        "marks": _get_marks(child, {"strong": {"type": "strong"}}),
-                    })
+            result.extend(
+                _inline_to_adf(
+                    token.get("children", []),
+                    _add_mark(marks, {"type": "strong"}),
+                )
+            )
 
         elif token_type == "strikethrough":
-            children = token.get("children", [])
-            for child in children:
-                text = _get_safe_text(child)
-                if text:
-                    result.append({
-                        "type": "text",
-                        "text": text,
-                        "marks": _get_marks(child, {"strike": {"type": "strike"}}),
-                    })
+            result.extend(
+                _inline_to_adf(
+                    token.get("children", []),
+                    _add_mark(marks, {"type": "strike"}),
+                )
+            )
 
-        elif token_type in ("link", "codespan"):
+        elif token_type == "link":
+            link_mark: AdfMark = {
+                "type": "link",
+                "attrs": {"href": token.get("attrs", {}).get("url", "")},
+            }
+            result.extend(
+                _inline_to_adf(
+                    token.get("children", []),
+                    _add_mark(marks, link_mark),
+                )
+            )
+
+        elif token_type == "codespan":
             text = _get_safe_text(token)
             if text:
-                result.append({
-                    "type": "text",
-                    "text": text,
-                    "marks": _get_marks(token),
-                })
+                code_marks = [mark for mark in marks if mark["type"] == "link"]
+                code_marks = _add_mark(code_marks, {"type": "code"})
+                result.append(_create_text_node(text, code_marks))
+
+        elif token_type == "image":
+            alt_text = _get_safe_text(token)
+            if alt_text:
+                result.append(_create_text_node(alt_text, marks))
 
         elif token_type == "linebreak":
             result.append({"type": "hardBreak"})
 
         elif token_type == "softbreak":
-            result.append({"type": "text", "text": " "})
+            result.append(_create_text_node(" ", marks))
 
         elif token_type == "block_text":
-            result.extend(_inline_to_adf(token.get("children", [])))
+            result.extend(_inline_to_adf(token.get("children", []), marks))
 
     filtered = [node for node in result if not (node.get("type") == "text" and not node.get("text"))]
     return _merge_adjacent_text_nodes(filtered)
