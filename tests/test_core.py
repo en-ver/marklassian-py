@@ -55,6 +55,68 @@ def test_inline_code_marks_only_allow_link(inline_code_marks_adf):
     assert adf == inline_code_marks_adf
 
 
+def test_nested_inline_marks_inside_link_are_preserved(adf_validator):
+    adf = markdown_to_adf(
+        "[plain **bold** *italic* ~~strike~~ `code`](https://example.com)"
+    )
+
+    adf_validator.validate(adf)
+    link = {"type": "link", "attrs": {"href": "https://example.com"}}
+    assert adf["content"][0]["content"] == [
+        {"type": "text", "text": "plain ", "marks": [link]},
+        {"type": "text", "text": "bold", "marks": [link, {"type": "strong"}]},
+        {"type": "text", "text": " ", "marks": [link]},
+        {"type": "text", "text": "italic", "marks": [link, {"type": "em"}]},
+        {"type": "text", "text": " ", "marks": [link]},
+        {"type": "text", "text": "strike", "marks": [link, {"type": "strike"}]},
+        {"type": "text", "text": " ", "marks": [link]},
+        {"type": "text", "text": "code", "marks": [link, {"type": "code"}]},
+    ]
+
+
+def test_outer_marks_are_preserved_across_nested_link_content(adf_validator):
+    adf = markdown_to_adf("**outer [plain *italic*](https://example.com)**")
+
+    adf_validator.validate(adf)
+    link = {"type": "link", "attrs": {"href": "https://example.com"}}
+    assert adf["content"][0]["content"] == [
+        {"type": "text", "text": "outer ", "marks": [{"type": "strong"}]},
+        {"type": "text", "text": "plain ", "marks": [{"type": "strong"}, link]},
+        {
+            "type": "text",
+            "text": "italic",
+            "marks": [{"type": "strong"}, link, {"type": "em"}],
+        },
+    ]
+
+
+def test_linked_image_keeps_alt_text_fallback(adf_validator):
+    adf = markdown_to_adf("[![Alt text](image.png)](https://example.com)")
+
+    adf_validator.validate(adf)
+    assert adf["content"][0]["content"] == [
+        {
+            "type": "text",
+            "text": "Alt text",
+            "marks": [
+                {
+                    "type": "link",
+                    "attrs": {"href": "https://example.com"},
+                }
+            ],
+        }
+    ]
+
+
+def test_sibling_text_nodes_do_not_share_mutable_marks():
+    adf = markdown_to_adf("[plain **bold** tail](https://example.com)")
+
+    first, middle, last = adf["content"][0]["content"]
+    assert first["marks"] is not last["marks"]
+    assert first["marks"][0] is not middle["marks"][0]
+    assert first["marks"][0]["attrs"] is not middle["marks"][0]["attrs"]
+
+
 def test_code_blocks(code_blocks_adf):
     markdown = """```typescript
 const hello = "world";
