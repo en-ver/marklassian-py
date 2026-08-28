@@ -1,4 +1,10 @@
-from typing import Any, Literal, Required, TypedDict
+import sys
+from typing import Any, Literal, TypedDict
+
+if sys.version_info >= (3, 11):
+    from typing import Required
+else:
+    from typing_extensions import Required
 
 
 class AdfMark(TypedDict, total=False):

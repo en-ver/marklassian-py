@@ -40,8 +40,15 @@ jobs:
         run: uv sync --all-groups --frozen --python "${{ matrix.python-version }}"
 
       - name: Run tests
-        continue-on-error: ${{ matrix.python-version == '3.10' }} # Remove after #1 is fixed.
         run: uv run --frozen --python "${{ matrix.python-version }}" pytest
+
+      - name: Check Python 3.10 wheel import
+        if: matrix.python-version == '3.10'
+        run: |
+          uv build --wheel
+          uv venv /tmp/marklassian-python-310-wheel --python "3.10"
+          uv pip install --python /tmp/marklassian-python-310-wheel/bin/python dist/*.whl
+          /tmp/marklassian-python-310-wheel/bin/python -c "import marklassian"
 
   quality:
     name: Quality and package checks

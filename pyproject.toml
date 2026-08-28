@@ -18,7 +18,10 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Text Processing :: Markup :: Markdown",
 ]
-dependencies = ["mistune>=3.3.4,<3.4"]
+dependencies = [
+    "mistune>=3.3.4,<3.4",
+    "typing-extensions>=4.0.0; python_version < '3.11'",
+]
 
 [project.urls]
 Homepage = "https://github.com/mbroton/marklassian-py"

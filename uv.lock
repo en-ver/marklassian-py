@@ -540,6 +540,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "mistune" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 
 [package.dev-dependencies]
@@ -552,7 +553,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "mistune", specifier = ">=3.3.4,<3.4" }]
+requires-dist = [
+    { name = "mistune", specifier = ">=3.3.4,<3.4" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'", specifier = ">=4.0.0" },
+]
 
 [package.metadata.requires-dev]
 dev = [
