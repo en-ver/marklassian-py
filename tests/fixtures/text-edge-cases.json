@@ -16,7 +16,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Multiple spaces will be converted to one space."
+          "text": "Multiple spaces   will be preserved     in this     text."
         }
       ]
     },

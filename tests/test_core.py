@@ -141,7 +141,7 @@ def test_text_edge_cases(text_edge_cases_adf):
         "Text will still be in same text block\n"
         "when only one line break.\n"
         "\n"
-        "Multiple spaces   will be converted     to one     space.\n"
+        "Multiple spaces   will be preserved     in this     text.\n"
         "\n"
         "This line will have a  \n"  # Two trailing spaces for hard break
         "hard break.\n"
@@ -151,6 +151,25 @@ def test_text_edge_cases(text_edge_cases_adf):
 
     adf = markdown_to_adf(markdown)
     assert adf == text_edge_cases_adf
+
+
+def test_significant_inline_whitespace_is_preserved(adf_validator):
+    adf = markdown_to_adf(
+        "Plain   text with\u00a0\u00a0non-breaking spaces.\n\n"
+        "`code  with\ttabs`\n\n"
+        "`  padded  `\n\n"
+        "**Bold   text**\n\n"
+        "[Link\u00a0\u00a0text](https://example.com)"
+    )
+
+    adf_validator.validate(adf)
+    assert [node["content"][0]["text"] for node in adf["content"]] == [
+        "Plain   text with\u00a0\u00a0non-breaking spaces.",
+        "code  with\ttabs",
+        " padded ",
+        "Bold   text",
+        "Link\u00a0\u00a0text",
+    ]
 
 
 def test_tables(table_adf):
