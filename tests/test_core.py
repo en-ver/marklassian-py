@@ -155,3 +155,25 @@ console.log(`Price: ${price}`);
 
     adf = markdown_to_adf(markdown)
     assert adf == special_chars_adf
+
+
+def test_empty_block_nodes_have_schema_valid_content() -> None:
+    empty_code = markdown_to_adf("```\n```")
+    assert empty_code["content"] == [
+        {"type": "codeBlock", "attrs": {"language": "text"}},
+    ]
+
+    empty_quote = markdown_to_adf(">")
+    assert empty_quote["content"] == [
+        {"type": "blockquote", "content": [{"type": "paragraph"}]},
+    ]
+
+    empty_list = markdown_to_adf("-")
+    assert empty_list["content"] == [
+        {
+            "type": "bulletList",
+            "content": [
+                {"type": "listItem", "content": [{"type": "paragraph"}]},
+            ],
+        },
+    ]

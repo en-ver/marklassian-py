@@ -233,68 +233,217 @@ def _is_task_list(items: list[dict[str, Any]]) -> bool:
     return all(item.get("type") == "task_list_item" for item in items)
 
 
-def _process_task_item(item: dict[str, Any]) -> AdfNode:
-    item_content: list[AdfNode] = []
+_INLINE_TOKEN_TYPES = {
+    "text",
+    "emphasis",
+    "strong",
+    "strikethrough",
+    "link",
+    "codespan",
+    "block_text",
+}
+
+
+def _contains_image(token: dict[str, Any]) -> bool:
+    if token.get("type") == "image":
+        return True
+    return any(_contains_image(child) for child in token.get("children", []))
+
+
+def _task_item_requires_list_fallback(item: dict[str, Any]) -> bool:
+    nested_task_list_seen = False
+
+    for token in item.get("children", []):
+        token_type = token.get("type", "")
+        if token_type == "blank_line":
+            continue
+
+        if token_type in _INLINE_TOKEN_TYPES or token_type == "paragraph":
+            if nested_task_list_seen or _contains_image(token):
+                return True
+            continue
+
+        if token_type == "list":
+            items = token.get("children", [])
+            if _is_task_list(items) and not _task_list_requires_list_fallback(items):
+                nested_task_list_seen = True
+                continue
+
+        return True
+
+    return False
+
+
+def _task_list_requires_list_fallback(items: list[dict[str, Any]]) -> bool:
+    return any(_task_item_requires_list_fallback(item) for item in items)
+
+
+def _process_task_item(item: dict[str, Any]) -> list[AdfNode]:
+    paragraphs: list[list[AdfNode]] = []
+    nested_task_lists: list[AdfNode] = []
     current_paragraph_tokens: list[dict[str, Any]] = []
 
-    inline_types = {"text", "emphasis", "strong", "strikethrough", "link", "codespan", "block_text"}
+    def flush_current_paragraph() -> None:
+        nonlocal current_paragraph_tokens
+        if current_paragraph_tokens:
+            paragraphs.append(_inline_to_adf(current_paragraph_tokens))
+            current_paragraph_tokens = []
 
     for token in item.get("children", []):
         token_type = token.get("type", "")
 
-        if token_type in inline_types:
+        if token_type in _INLINE_TOKEN_TYPES:
             current_paragraph_tokens.append(token)
-        else:
-            if current_paragraph_tokens:
-                item_content.extend(_inline_to_adf(current_paragraph_tokens))
-                current_paragraph_tokens = []
+        elif token_type == "paragraph":
+            flush_current_paragraph()
+            paragraphs.append(_inline_to_adf(token.get("children", [])))
+        elif token_type == "blank_line":
+            flush_current_paragraph()
+        elif token_type == "list":
+            flush_current_paragraph()
+            nested_task_lists.append(_create_task_list(token.get("children", [])))
 
-            if token_type == "list":
-                list_items = token.get("children", [])
-                if _is_task_list(list_items):
-                    item_content.append({
-                        "type": "taskList",
-                        "attrs": {"localId": _generate_local_id()},
-                        "content": [_process_task_item(li) for li in list_items],
-                    })
-                else:
-                    is_ordered = token.get("attrs", {}).get("ordered", False)
-                    start = token.get("attrs", {}).get("start", 1)
-                    list_node: AdfNode = {
-                        "type": "orderedList" if is_ordered else "bulletList",
-                        "content": [_process_list_item(li) for li in list_items],
-                    }
-                    if is_ordered:
-                        list_node["attrs"] = {"order": start}
-                    item_content.append(list_node)
-            else:
-                processed = _tokens_to_adf([token])
-                item_content.extend(processed)
-
-    if current_paragraph_tokens:
-        item_content.extend(_inline_to_adf(current_paragraph_tokens))
+    flush_current_paragraph()
 
     checked = item.get("attrs", {}).get("checked", False)
-    return {
-        "type": "taskItem",
-        "attrs": {
-            "localId": _generate_local_id(),
-            "state": "DONE" if checked else "TODO",
-        },
-        "content": item_content,
+    attrs = {
+        "localId": _generate_local_id(),
+        "state": "DONE" if checked else "TODO",
     }
+
+    if len(paragraphs) > 1:
+        block_paragraphs: list[AdfNode] = []
+        for content in paragraphs:
+            paragraph: AdfNode = {"type": "paragraph"}
+            if content:
+                paragraph["content"] = content
+            block_paragraphs.append(paragraph)
+
+        task_item: AdfNode = {
+            "type": "blockTaskItem",
+            "attrs": attrs,
+            "content": block_paragraphs,
+        }
+    else:
+        task_item = {
+            "type": "taskItem",
+            "attrs": attrs,
+            "content": paragraphs[0] if paragraphs else [],
+        }
+
+    return [task_item, *nested_task_lists]
+
+
+def _create_task_list(items: list[dict[str, Any]]) -> AdfNode:
+    content: list[AdfNode] = []
+    for item in items:
+        content.extend(_process_task_item(item))
+
+    return {
+        "type": "taskList",
+        "attrs": {"localId": _generate_local_id()},
+        "content": content,
+    }
+
+
+def _process_task_item_as_list_item(item: dict[str, Any]) -> AdfNode:
+    list_item = _process_list_item(item)
+    marker = "[x] " if item.get("attrs", {}).get("checked", False) else "[ ] "
+    item_content = list_item["content"]
+
+    if item_content and item_content[0].get("type") == "paragraph":
+        paragraph = item_content[0]
+        paragraph_content = paragraph.get("content", [])
+        if paragraph_content:
+            paragraph["content"] = _merge_adjacent_text_nodes([
+                {"type": "text", "text": marker},
+                *paragraph_content,
+            ])
+        else:
+            paragraph["content"] = [{"type": "text", "text": marker.rstrip()}]
+    else:
+        item_content.insert(0, {
+            "type": "paragraph",
+            "content": [{"type": "text", "text": marker.rstrip()}],
+        })
+
+    return list_item
+
+
+def _prefix_paragraph(node: AdfNode, prefix: str) -> None:
+    if node.get("type") != "paragraph":
+        return
+
+    content = node.get("content", [])
+    if content:
+        node["content"] = _merge_adjacent_text_nodes([
+            {"type": "text", "text": prefix},
+            *content,
+        ])
+    else:
+        node["content"] = [{"type": "text", "text": prefix.rstrip()}]
+
+
+def _block_token_to_list_item_adf(token: dict[str, Any]) -> list[AdfNode]:
+    token_type = token.get("type", "")
+
+    if token_type == "block_text":
+        return _process_paragraph(token.get("children", []))
+
+    if token_type == "heading":
+        level = token.get("attrs", {}).get("level", 1)
+        paragraph: AdfNode = {
+            "type": "paragraph",
+            "content": _inline_to_adf(token.get("children", [])),
+        }
+        _prefix_paragraph(paragraph, f"{'#' * level} ")
+        return [paragraph]
+
+    if token_type == "block_quote":
+        content: list[AdfNode] = []
+        for child in token.get("children", []):
+            content.extend(_block_token_to_list_item_adf(child))
+        if not content:
+            content = [{"type": "paragraph"}]
+
+        quoted_content: list[AdfNode] = []
+        for node in content:
+            if node.get("type") == "paragraph":
+                _prefix_paragraph(node, "> ")
+            else:
+                quoted_content.append({
+                    "type": "paragraph",
+                    "content": [{"type": "text", "text": ">"}],
+                })
+            quoted_content.append(node)
+        return quoted_content
+
+    if token_type == "thematic_break":
+        return [{
+            "type": "paragraph",
+            "content": [{"type": "text", "text": "---"}],
+        }]
+
+    if token_type == "table":
+        text = _get_safe_text(token)
+        if text:
+            return [{
+                "type": "paragraph",
+                "content": [{"type": "text", "text": text}],
+            }]
+        return []
+
+    return _tokens_to_adf([token])
 
 
 def _process_list_item(item: dict[str, Any]) -> AdfNode:
     item_content: list[AdfNode] = []
     current_paragraph_tokens: list[dict[str, Any]] = []
 
-    inline_types = {"text", "emphasis", "strong", "strikethrough", "link", "codespan", "block_text"}
-
     for token in item.get("children", []):
         token_type = token.get("type", "")
 
-        if token_type in inline_types:
+        if token_type in _INLINE_TOKEN_TYPES and not _contains_image(token):
             current_paragraph_tokens.append(token)
         else:
             if current_paragraph_tokens:
@@ -306,25 +455,12 @@ def _process_list_item(item: dict[str, Any]) -> AdfNode:
 
             if token_type == "list":
                 list_items = token.get("children", [])
-                if _is_task_list(list_items):
-                    item_content.append({
-                        "type": "taskList",
-                        "attrs": {"localId": _generate_local_id()},
-                        "content": [_process_task_item(li) for li in list_items],
-                    })
+                if _is_task_list(list_items) and not _task_list_requires_list_fallback(list_items):
+                    item_content.append(_create_task_list(list_items))
                 else:
-                    is_ordered = token.get("attrs", {}).get("ordered", False)
-                    start = token.get("attrs", {}).get("start", 1)
-                    list_node: AdfNode = {
-                        "type": "orderedList" if is_ordered else "bulletList",
-                        "content": [_process_list_item(li) for li in list_items],
-                    }
-                    if is_ordered:
-                        list_node["attrs"] = {"order": start}
-                    item_content.append(list_node)
+                    item_content.append(_create_regular_list(token))
             else:
-                processed = _tokens_to_adf([token])
-                item_content.extend(processed)
+                item_content.extend(_block_token_to_list_item_adf(token))
 
     if current_paragraph_tokens:
         item_content.append({
@@ -332,10 +468,31 @@ def _process_list_item(item: dict[str, Any]) -> AdfNode:
             "content": _inline_to_adf(current_paragraph_tokens),
         })
 
+    if not item_content:
+        item_content.append({"type": "paragraph"})
+
     return {
         "type": "listItem",
         "content": item_content,
     }
+
+
+def _create_regular_list(token: dict[str, Any]) -> AdfNode:
+    items = token.get("children", [])
+    content = [
+        _process_task_item_as_list_item(item)
+        if item.get("type") == "task_list_item"
+        else _process_list_item(item)
+        for item in items
+    ]
+    is_ordered = token.get("attrs", {}).get("ordered", False)
+    list_node: AdfNode = {
+        "type": "orderedList" if is_ordered else "bulletList",
+        "content": content,
+    }
+    if is_ordered:
+        list_node["attrs"] = {"order": token.get("attrs", {}).get("start", 1)}
+    return list_node
 
 
 def _process_table_cell_content(children: list[dict[str, Any]]) -> list[AdfNode]:
@@ -407,35 +564,31 @@ def _tokens_to_adf(tokens: list[dict[str, Any]] | None) -> list[AdfNode]:
         elif token_type == "list":
             list_items = token.get("children", [])
             if _is_task_list(list_items):
-                result.append({
-                    "type": "taskList",
-                    "attrs": {"localId": _generate_local_id()},
-                    "content": [_process_task_item(item) for item in list_items],
-                })
+                if _task_list_requires_list_fallback(list_items):
+                    result.append(_create_regular_list(token))
+                else:
+                    result.append(_create_task_list(list_items))
             else:
-                is_ordered = token.get("attrs", {}).get("ordered", False)
-                start = token.get("attrs", {}).get("start", 1)
-                list_node: AdfNode = {
-                    "type": "orderedList" if is_ordered else "bulletList",
-                    "content": [_process_list_item(item) for item in list_items],
-                }
-                if is_ordered:
-                    list_node["attrs"] = {"order": start}
-                result.append(list_node)
+                result.append(_create_regular_list(token))
 
         elif token_type == "block_code":
             lang = token.get("attrs", {}).get("info", "") or "text"
             raw_text = token.get("raw", "").removesuffix("\n")
-            result.append({
+            code_block: AdfNode = {
                 "type": "codeBlock",
                 "attrs": {"language": lang},
-                "content": [{"type": "text", "text": raw_text}],
-            })
+            }
+            if raw_text:
+                code_block["content"] = [{"type": "text", "text": raw_text}]
+            result.append(code_block)
 
         elif token_type == "block_quote":
+            content = _tokens_to_adf(token.get("children", []))
+            if not content:
+                content = [{"type": "paragraph"}]
             result.append({
                 "type": "blockquote",
-                "content": _tokens_to_adf(token.get("children", [])),
+                "content": content,
             })
 
         elif token_type == "thematic_break":
