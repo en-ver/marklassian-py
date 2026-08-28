@@ -1,5 +1,4 @@
 import copy
-import re
 import uuid
 from typing import Any
 
@@ -19,15 +18,12 @@ def _get_safe_text(token: dict[str, Any]) -> str:
 
     if children:
         texts = [_get_safe_text(child) for child in children]
-        combined = "".join(texts)
-        return re.sub(r"\s+", " ", combined)
+        return "".join(texts)
 
     raw = token.get("raw", "")
     if isinstance(raw, str):
         text = raw.rstrip("\n")
-        text = text.replace("\n", " ")
-        text = re.sub(r"\s+", " ", text)
-        return text
+        return text.replace("\n", " ")
     return ""
 
 
