@@ -135,6 +135,34 @@ Some text
     assert adf == code_blocks_adf
 
 
+def test_fenced_code_uses_first_info_word_as_language(adf_validator):
+    markdown = """```python title=demo
+print(1)
+```
+
+~~~   ruby startline=3
+puts 1
+~~~
+
+```foo+bar extra
+example
+```
+
+```
+plain
+```"""
+
+    adf = markdown_to_adf(markdown)
+
+    adf_validator.validate(adf)
+    assert [node["attrs"]["language"] for node in adf["content"]] == [
+        "python",
+        "ruby",
+        "foo+bar",
+        "text",
+    ]
+
+
 def test_text_edge_cases(text_edge_cases_adf):
     # Note: Line 6 has two trailing spaces after "a" for hard break
     markdown = (

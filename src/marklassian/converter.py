@@ -561,7 +561,8 @@ def _tokens_to_adf(tokens: list[dict[str, Any]] | None) -> list[AdfNode]:
                 result.append(_create_regular_list(token))
 
         elif token_type == "block_code":
-            lang = token.get("attrs", {}).get("info", "") or "text"
+            info_words = token.get("attrs", {}).get("info", "").split(maxsplit=1)
+            lang = info_words[0] if info_words else "text"
             raw_text = token.get("raw", "").removesuffix("\n")
             code_block: AdfNode = {
                 "type": "codeBlock",
